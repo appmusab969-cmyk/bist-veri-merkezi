@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../services/app_settings.dart';
+
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
 
@@ -8,12 +10,29 @@ class SettingsScreen extends StatefulWidget {
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
-  bool participationFilter = true;
-  bool highConfidenceSignals = true;
-  bool kapNewsImpact = false;
-  bool simpleExplanations = true;
+  final _s = AppSettings.instance;
 
-  final Set<String> selectedPatterns = {'Flama', 'Fincan-Kulp'};
+  // KAP haber etkisi henüz veri kaynağına bağlı değil (ücretsiz akış yok).
+  bool kapNewsImpact = false;
+
+  bool get participationFilter => _s.participationFilter;
+  bool get highConfidenceSignals => _s.highConfidenceOnly;
+  bool get simpleExplanations => _s.simpleExplanations;
+  Set<String> get selectedPatterns => _s.preferredSignals;
+
+  @override
+  void initState() {
+    super.initState();
+    _s.addListener(_sync);
+  }
+
+  @override
+  void dispose() {
+    _s.removeListener(_sync);
+    super.dispose();
+  }
+
+  void _sync() => setState(() {});
 
   @override
   Widget build(BuildContext context) {
@@ -106,7 +125,28 @@ class _SettingsScreenState extends State<SettingsScreen> {
               _iconButton(
                 context,
                 icon: Icons.help_outline_rounded,
-                onPressed: () {},
+                onPressed: () => showDialog<void>(
+                  context: context,
+                  builder: (_) => AlertDialog(
+                    title: const Text('Ayarlar hakkında'),
+                    content: const Text(
+                      'Katılım filtresi: yalnızca Katılım Endeksi listesindeki '
+                      'hisseleri gösterir.\n\n'
+                      'Yüksek güvenli sinyaller: Formasyonlar ekranında güven '
+                      'puanı 60 altındaki sonuçları gizler.\n\n'
+                      'Anlatım seviyesi: teknik sekmedeki açıklamanın '
+                      'ayrıntı düzeyini belirler.\n\n'
+                      'Tüm veriler Yahoo Finance\'ten ücretsiz çekilir; '
+                      'yatırım tavsiyesi değildir.',
+                    ),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(context),
+                        child: const Text('Tamam'),
+                      ),
+                    ],
+                  ),
+                ),
                 semanticLabel: 'Ayar bilgileri',
               ),
             ],
@@ -193,9 +233,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           _switch(
                             context,
                             value: participationFilter,
-                            onChanged: (value) {
-                              setState(() => participationFilter = value);
-                            },
+                            onChanged: _s.setParticipationFilter,
                             semanticLabel: 'Katılım Endeksi filtresi',
                           ),
                         ],
@@ -236,24 +274,27 @@ class _SettingsScreenState extends State<SettingsScreen> {
               context,
               icon: Icons.verified_outlined,
               iconColor: colors.primary,
-              title: 'Yalnızca yüksek güvenli formasyonlar',
-              description: 'Güven puanı güçlü sinyaller önce görünür.',
+              title: 'Yalnızca yüksek güvenli sinyaller',
+              description: 'Formasyonlar ekranında güven < 60 olanlar gizlenir.',
               value: highConfidenceSignals,
-              onChanged: (value) {
-                setState(() => highConfidenceSignals = value);
-              },
-              semanticLabel: 'Yüksek güvenli formasyonlar',
+              onChanged: _s.setHighConfidenceOnly,
+              semanticLabel: 'Yüksek güvenli sinyaller',
             ),
             Divider(height: 1, indent: 16, endIndent: 16, color: colors.outlineVariant),
             _settingRow(
               context,
               icon: Icons.newspaper_outlined,
               iconColor: colors.tertiary,
-              title: 'KAP haber etkisini göster',
-              description: 'Şirket duyurularının olası etkisini sade özetle gör.',
+              title: 'KAP haber etkisi (yakında)',
+              description: 'Ücretsiz KAP akışı henüz entegre değil.',
               value: kapNewsImpact,
               onChanged: (value) {
                 setState(() => kapNewsImpact = value);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('KAP haber akışı henüz mevcut değil.'),
+                  ),
+                );
               },
               semanticLabel: 'KAP haber etkisi',
             ),
@@ -286,9 +327,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
               spacing: 10,
               runSpacing: 10,
               children: [
-                _patternChip(context, 'Flama'),
-                _patternChip(context, 'Fincan-Kulp'),
-                _patternChip(context, 'Ters Omuz-Baş-Omuz'),
+                _patternChip(context, 'Yükseliş'),
+                _patternChip(context, 'Kırılım'),
+                _patternChip(context, 'Ortalama üstü'),
               ],
             ),
             const SizedBox(height: 16),
@@ -330,7 +371,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               title: 'Sade açıklamalar',
               description: 'Başlangıç için net ve kısa yorumlar.',
               selected: simpleExplanations,
-              onTap: () => setState(() => simpleExplanations = true),
+              onTap: () => _s.setSimpleExplanations(true),
             ),
           ),
           const SizedBox(width: 12),
@@ -341,7 +382,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               title: 'Detaylı metrikler',
               description: 'Araştırmada ek yöntem etiketleri göster.',
               selected: !simpleExplanations,
-              onTap: () => setState(() => simpleExplanations = false),
+              onTap: () => _s.setSimpleExplanations(false),
             ),
           ),
         ],
@@ -386,7 +427,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
                 const SizedBox(height: 5),
                 Text(
-                  'Katılım filtresi açık · Yüksek güvenli sinyaller öncelikli',
+                  [
+                    participationFilter
+                        ? 'Katılım filtresi açık'
+                        : 'Katılım filtresi kapalı',
+                    highConfidenceSignals
+                        ? 'yalnızca güçlü sinyaller'
+                        : 'tüm sinyaller',
+                  ].join(' · '),
                   style: theme.textTheme.titleSmall?.copyWith(
                     color: colors.onSurface,
                     fontWeight: FontWeight.w800,
@@ -395,7 +443,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  'Tercihlerin araştırma ekranlarına anında uygulanır.',
+                  'Tercihler kaydedildi ve Ana Sayfa ile Formasyonlar\'a uygulanıyor.',
                   style: theme.textTheme.bodySmall?.copyWith(
                     color: colors.onSurfaceVariant,
                     height: 1.4,
@@ -418,15 +466,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       color: Colors.transparent,
       child: InkWell(
         borderRadius: BorderRadius.circular(24),
-        onTap: () {
-          setState(() {
-            if (selected) {
-              selectedPatterns.remove(label);
-            } else {
-              selectedPatterns.add(label);
-            }
-          });
-        },
+        onTap: () => _s.togglePreferredSignal(label),
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
           decoration: BoxDecoration(

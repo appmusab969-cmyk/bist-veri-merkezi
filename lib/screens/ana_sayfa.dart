@@ -3,8 +3,10 @@ import '../theme.dart';
 import '../models/quote.dart';
 import '../services/yahoo_finance.dart';
 import '../services/format.dart';
+import '../services/app_settings.dart';
 import '../widgets/sparkline.dart';
 import 'hisse_ara.dart';
+import 'hisse_detay.dart';
 
 /// Ana Sayfa'da canlı fiyatı çekilen hisseler (Yahoo `.IS` sembolleri).
 const _watchlist = ['ASELS', 'OYAKC', 'TOASO'];
@@ -28,13 +30,19 @@ class _MarketCockpitScreenState extends State<MarketCockpitScreen> {
   @override
   void initState() {
     super.initState();
+    AppSettings.instance.addListener(_onSettings);
     _load();
   }
 
   @override
   void dispose() {
+    AppSettings.instance.removeListener(_onSettings);
     _api.dispose();
     super.dispose();
+  }
+
+  void _onSettings() {
+    if (mounted) setState(() {});
   }
 
   Future<void> _load() async {
@@ -86,14 +94,12 @@ class _MarketCockpitScreenState extends State<MarketCockpitScreen> {
                   delegate: SliverChildListDelegate([
                     _SearchButton(),
                     const SizedBox(height: 28),
-                    _MarketOverview(),
+                    _MarketBreadth(index: _index, stocks: _stocks),
                     const SizedBox(height: 28),
                     if (_error != null)
                       _ErrorCard(message: _error!, onRetry: _load)
                     else
                       _ResearchRadar(stocks: _stocks, loading: _loading),
-                    const SizedBox(height: 28),
-                    _Signals(),
                     const SizedBox(height: 28),
                     _ParticipationNotice(),
                   ]),
@@ -190,7 +196,11 @@ class _Header extends StatelessWidget {
               ),
               _IconButton(
                 icon: Icons.notifications_none_rounded,
-                onPressed: () {},
+                onPressed: () => ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Bildirimler henüz aktif değil.'),
+                  ),
+                ),
               ),
             ],
           ),
@@ -320,50 +330,66 @@ class _SearchButton extends StatelessWidget {
   }
 }
 
-class _MarketOverview extends StatelessWidget {
-  _MarketOverview();
+/// Takip listesindeki hisselerin gün içi durumundan hesaplanan gerçek özet.
+class _MarketBreadth extends StatelessWidget {
+  const _MarketBreadth({required this.index, required this.stocks});
 
-  final _items = const [
-    (
-      Icons.factory_outlined,
-      'Bankacılık dışı sanayi hisselerinde alım iştahı güçleniyor',
-      'Para akışı üretim ve ihracat ağırlıklı şirketlere yöneliyor.',
-      true,
-    ),
-    (
-      Icons.verified_user_outlined,
-      'Savunma sanayi hisseleri ihracat haberleriyle öne çıkıyor',
-      'Yeni sipariş akışı, sektörde görünürlüğü destekliyor.',
-      false,
-    ),
-    (
-      Icons.verified_outlined,
-      "Katılım Endeksi bugün BIST 100'ün üzerinde performans gösteriyor",
-      'Uygun hisselerde gün içi ortalama yükseliş daha güçlü.',
-      true,
-    ),
-  ];
+  final Quote? index;
+  final List<Quote> stocks;
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final colors = theme.colorScheme;
+    final colors = Theme.of(context).colorScheme;
+    final text = Theme.of(context).textTheme;
+
+    final up = stocks.where((q) => q.isUp).length;
+    final down = stocks.length - up;
+    final avg = stocks.isEmpty
+        ? 0.0
+        : stocks.map((q) => q.changePercent).reduce((a, b) => a + b) /
+            stocks.length;
+
+    final idxColor =
+        (index?.isUp ?? true) ? colors.primary : colors.error;
 
     return _Section(
-      eyebrow: 'Örnek içerik',
-      title: 'Bugünün Piyasa Özeti',
-      trailing: 'Demo metin',
+      eyebrow: 'Canlı bakış',
+      title: 'Piyasa Özeti',
+      trailing: 'Hesaplanıyor',
       children: [
-        for (final item in _items)
-          Padding(
-            padding: const EdgeInsets.only(bottom: 10),
-            child: _InsightCard(
-              icon: item.$1,
-              title: item.$2,
-              description: item.$3,
-              accent: item.$4 ? colors.primary : colors.tertiary,
-            ),
+        Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: colors.surface,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: colors.outline),
           ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (index != null)
+                Text(
+                  'BIST 100: ${formatPrice(index!.price, suffix: '')}  '
+                  '${formatPercent(index!.changePercent)}',
+                  style: text.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w800,
+                    color: idxColor,
+                  ),
+                ),
+              const SizedBox(height: 8),
+              Text(
+                'Takip listesi: $up yükselen · $down düşen · '
+                'ortalama ${formatPercent(avg)}',
+                style: text.bodySmall?.copyWith(color: colors.onSurfaceVariant),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                'Bu satır yalnızca canlı fiyatlardan hesaplanır; yorum içermez.',
+                style: text.labelSmall?.copyWith(color: colors.onSurfaceVariant),
+              ),
+            ],
+          ),
+        ),
       ],
     );
   }
@@ -436,7 +462,9 @@ class _FeaturedStock extends StatelessWidget {
     final colors = theme.colorScheme;
     final changeColor = quote.isUp ? colors.primary : colors.error;
 
-    return Container(
+    return _TappableStock(
+      code: quote.bistCode,
+      child: Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: colors.surface,
@@ -604,6 +632,29 @@ class _FeaturedStock extends StatelessWidget {
           ),
         ],
       ),
+    ),
+    );
+  }
+}
+
+/// Bir kartı sarıp hisse detayına götüren yardımcı.
+class _TappableStock extends StatelessWidget {
+  const _TappableStock({required this.code, required this.child});
+  final String code;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(12),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: () => Navigator.of(context).push(MaterialPageRoute(
+          builder: (_) => HisseDetayScreen(code: code),
+        )),
+        child: child,
+      ),
     );
   }
 }
@@ -623,7 +674,9 @@ class _CompactStock extends StatelessWidget {
     final colors = theme.colorScheme;
     final changeColor = quote.isUp ? colors.primary : colors.error;
 
-    return Container(
+    return _TappableStock(
+      code: quote.bistCode,
+      child: Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: colors.surface,
@@ -677,90 +730,50 @@ class _CompactStock extends StatelessWidget {
           ),
         ],
       ),
+    ),
     );
   }
 }
 
-class _Signals extends StatelessWidget {
-  _Signals();
-
+/// Katılım filtresi durumunu gösteren ve tek dokunuşla açıp kapatan kart.
+class _ParticipationNotice extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
-
-    return _Section(
-      eyebrow: 'Örnek içerik',
-      title: 'Sinyal Kartları (Demo)',
-      eyebrowColor: colors.tertiary,
-      children: [
-        Container(
-          decoration: BoxDecoration(
-            color: colors.surface,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: colors.outline),
-          ),
-          child: Column(
-            children: [
-              _SignalRow(
-                icon: Icons.radar_rounded,
-                title: 'ASELS flama kırılımı hedef bölgesine yaklaşıyor',
-                description: 'Fiyat hareketini sakin biçimde takip et.',
-                accent: colors.tertiary,
-              ),
-              Divider(height: 1, indent: 16, endIndent: 16, color: colors.outline),
-              _SignalRow(
-                icon: Icons.check_circle_outline_rounded,
-                title: "OYAKC'de fincan-kulp teyidi güçleniyor",
-                description: 'Güven sinyali gün içi hacimle destekleniyor.',
-                accent: colors.primary,
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _ParticipationNotice extends StatelessWidget {
-  _ParticipationNotice();
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final colors = theme.colorScheme;
+    final text = Theme.of(context).textTheme;
+    final on = AppSettings.instance.participationFilter;
 
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: colors.primary.withValues(alpha: .1),
+        color: colors.primary.withValues(alpha: on ? .10 : .04),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: colors.primary.withValues(alpha: .25)),
+        border: Border.all(
+          color: colors.primary.withValues(alpha: on ? .25 : .12),
+        ),
       ),
       child: Row(
         children: [
-          _CircleIcon(
-            icon: Icons.lock_outline_rounded,
-            foreground: colors.primary,
-            background: colors.primary.withValues(alpha: .15),
-            size: 36,
+          Icon(
+            on ? Icons.lock_outline_rounded : Icons.lock_open_rounded,
+            color: colors.primary,
           ),
           const SizedBox(width: 12),
           Expanded(
             child: Text(
-              'Yalnızca Katılım Endeksine Uygun hisseler gösteriliyor',
-              style: theme.textTheme.labelSmall?.copyWith(
-                color: colors.secondary,
+              on
+                  ? 'Katılım filtresi açık — yalnızca Katılım Endeksi hisseleri'
+                  : 'Katılım filtresi kapalı — tüm hisseler gösteriliyor',
+              style: text.labelSmall?.copyWith(
+                color: colors.onSurfaceVariant,
                 height: 1.35,
               ),
             ),
           ),
-          Text(
-            'Filtreler',
-            style: theme.textTheme.labelSmall?.copyWith(
-              color: colors.primary,
-              fontWeight: FontWeight.w800,
-            ),
+          const SizedBox(width: 8),
+          Switch(
+            value: on,
+            onChanged: AppSettings.instance.setParticipationFilter,
           ),
         ],
       ),
@@ -774,7 +787,6 @@ class _Section extends StatelessWidget {
     required this.title,
     required this.children,
     this.trailing,
-    this.eyebrowColor,
     this.trailingColor,
   });
 
@@ -782,7 +794,6 @@ class _Section extends StatelessWidget {
   final String title;
   final List<Widget> children;
   final String? trailing;
-  final Color? eyebrowColor;
   final Color? trailingColor;
 
   @override
@@ -803,7 +814,7 @@ class _Section extends StatelessWidget {
                   Text(
                     eyebrow,
                     style: theme.textTheme.labelSmall?.copyWith(
-                      color: eyebrowColor ?? colors.primary,
+                      color: colors.primary,
                       fontWeight: FontWeight.w800,
                       letterSpacing: 1.4,
                     ),
@@ -836,137 +847,6 @@ class _Section extends StatelessWidget {
     );
   }
 }
-
-class _InsightCard extends StatelessWidget {
-  const _InsightCard({
-    required this.icon,
-    required this.title,
-    required this.description,
-    required this.accent,
-  });
-
-  final IconData icon;
-  final String title;
-  final String description;
-  final Color accent;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final colors = theme.colorScheme;
-
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: colors.surface,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: colors.outline),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _CircleIcon(
-            icon: icon,
-            foreground: accent,
-            background: accent.withValues(alpha: .12),
-            size: 36,
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: colors.onSurface,
-                    fontWeight: FontWeight.w700,
-                    height: 1.35,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  description,
-                  style: theme.textTheme.labelSmall?.copyWith(
-                    color: colors.onSurfaceVariant,
-                    height: 1.35,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _SignalRow extends StatelessWidget {
-  const _SignalRow({
-    required this.icon,
-    required this.title,
-    required this.description,
-    required this.accent,
-  });
-
-  final IconData icon;
-  final String title;
-  final String description;
-  final Color accent;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final colors = theme.colorScheme;
-
-    return Padding(
-      padding: const EdgeInsets.all(16),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _CircleIcon(
-            icon: icon,
-            foreground: accent,
-            background: accent.withValues(alpha: .15),
-            size: 36,
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: colors.onSurface,
-                    fontWeight: FontWeight.w700,
-                    height: 1.35,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  description,
-                  style: theme.textTheme.labelSmall?.copyWith(
-                    color: colors.onSurfaceVariant,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 8),
-          Padding(
-            padding: const EdgeInsets.only(top: 8),
-            child: Icon(
-              Icons.chevron_right_rounded,
-              color: colors.onSurfaceVariant,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 
 class _CircleIcon extends StatelessWidget {
   const _CircleIcon({

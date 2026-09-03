@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/date_symbol_data_local.dart';
 
 import 'theme.dart';
+import 'services/app_settings.dart';
 import 'screens/ana_sayfa.dart';
 import 'screens/formasyonlar.dart';
 import 'screens/ayarlar_ve_filtreler.dart';
@@ -9,6 +10,7 @@ import 'screens/ayarlar_ve_filtreler.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await initializeDateFormatting('tr_TR');
+  await AppSettings.instance.load();
   runApp(const PusulaApp());
 }
 

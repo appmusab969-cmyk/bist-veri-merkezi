@@ -7,6 +7,11 @@ class Quote {
     required this.previousClose,
     required this.currency,
     this.spark = const [],
+    this.dayLow,
+    this.dayHigh,
+    this.fiftyTwoWeekLow,
+    this.fiftyTwoWeekHigh,
+    this.volume,
   });
 
   final String symbol; // "ASELS.IS"
@@ -14,6 +19,11 @@ class Quote {
   final double price;
   final double previousClose;
   final String currency;
+  final double? dayLow;
+  final double? dayHigh;
+  final double? fiftyTwoWeekLow;
+  final double? fiftyTwoWeekHigh;
+  final double? volume;
 
   /// Gün içi / son dönem kapanış serisi (mini grafik için).
   final List<double> spark;
@@ -52,6 +62,8 @@ class Quote {
         (meta['previousClose'] as num?)?.toDouble() ??
         price;
 
+    double? d(String k) => (meta[k] as num?)?.toDouble();
+
     return Quote(
       symbol: meta['symbol'] as String? ?? '',
       shortName: (meta['shortName'] ?? meta['longName'] ?? meta['symbol'] ?? '')
@@ -60,6 +72,11 @@ class Quote {
       previousClose: prevClose,
       currency: meta['currency'] as String? ?? 'TRY',
       spark: closes,
+      dayLow: d('regularMarketDayLow'),
+      dayHigh: d('regularMarketDayHigh'),
+      fiftyTwoWeekLow: d('fiftyTwoWeekLow'),
+      fiftyTwoWeekHigh: d('fiftyTwoWeekHigh'),
+      volume: d('regularMarketVolume'),
     );
   }
 }
