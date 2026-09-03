@@ -1,0 +1,1052 @@
+import 'package:flutter/material.dart';
+import '../theme.dart';
+import '../models/quote.dart';
+import '../services/yahoo_finance.dart';
+import '../services/format.dart';
+import '../widgets/sparkline.dart';
+import 'hisse_ara.dart';
+
+/// Ana Sayfa'da canlı fiyatı çekilen hisseler (Yahoo `.IS` sembolleri).
+const _watchlist = ['ASELS', 'OYAKC', 'TOASO'];
+const _indexSymbol = 'XU100.IS'; // BIST 100 endeksi
+
+class MarketCockpitScreen extends StatefulWidget {
+  const MarketCockpitScreen({super.key});
+
+  @override
+  State<MarketCockpitScreen> createState() => _MarketCockpitScreenState();
+}
+
+class _MarketCockpitScreenState extends State<MarketCockpitScreen> {
+  final _api = YahooFinance();
+
+  Quote? _index;
+  List<Quote> _stocks = const [];
+  bool _loading = true;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  @override
+  void dispose() {
+    _api.dispose();
+    super.dispose();
+  }
+
+  Future<void> _load() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final results = await Future.wait([
+        _api.fetchQuote(_indexSymbol).then<Quote?>((q) => q).catchError((_) => null),
+        _api.fetchQuotes(_watchlist),
+      ]);
+      if (!mounted) return;
+      setState(() {
+        _index = results[0] as Quote?;
+        _stocks = results[1] as List<Quote>;
+        _loading = false;
+        if (_index == null && _stocks.isEmpty) {
+          _error = 'Veri alınamadı. İnternet bağlantını kontrol et.';
+        }
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        _error = e.toString();
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+
+    return Scaffold(
+      backgroundColor: colors.surfaceContainerLowest,
+      body: SafeArea(
+        bottom: false,
+        child: RefreshIndicator(
+          onRefresh: _load,
+          child: CustomScrollView(
+            slivers: [
+              SliverToBoxAdapter(
+                child: _Header(index: _index, loading: _loading),
+              ),
+              SliverPadding(
+                padding: const EdgeInsets.fromLTRB(20, 20, 20, 40),
+                sliver: SliverList(
+                  delegate: SliverChildListDelegate([
+                    _SearchButton(),
+                    const SizedBox(height: 28),
+                    _MarketOverview(),
+                    const SizedBox(height: 28),
+                    if (_error != null)
+                      _ErrorCard(message: _error!, onRetry: _load)
+                    else
+                      _ResearchRadar(stocks: _stocks, loading: _loading),
+                    const SizedBox(height: 28),
+                    _Signals(),
+                    const SizedBox(height: 28),
+                    _ParticipationNotice(),
+                  ]),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ErrorCard extends StatelessWidget {
+  const _ErrorCard({required this.message, required this.onRetry});
+
+  final String message;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: colors.error.withValues(alpha: .1),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: colors.error.withValues(alpha: .3)),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.cloud_off_rounded, color: colors.error),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              message,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: colors.onSurface,
+                  ),
+            ),
+          ),
+          TextButton(onPressed: onRetry, child: const Text('Yeniden dene')),
+        ],
+      ),
+    );
+  }
+}
+
+class _Header extends StatelessWidget {
+  const _Header({this.index, this.loading = false});
+
+  final Quote? index;
+  final bool loading;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final idx = index;
+    final isUp = idx?.isUp ?? true;
+    final changeColor = isUp ? colors.primary : colors.error;
+
+    return Container(
+      padding: const EdgeInsets.fromLTRB(20, 28, 20, 20),
+      decoration: BoxDecoration(
+        color: colors.surface,
+        border: Border(bottom: BorderSide(color: colors.outline)),
+      ),
+      child: Column(
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'PİYASA KOKPİTİ',
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: colors.onSurfaceVariant,
+                      fontWeight: FontWeight.w600,
+                      letterSpacing: 1.7,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Ana Sayfa',
+                    style: theme.textTheme.headlineSmall?.copyWith(
+                      color: colors.onSurface,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ],
+              ),
+              _IconButton(
+                icon: Icons.notifications_none_rounded,
+                onPressed: () {},
+              ),
+            ],
+          ),
+          const SizedBox(height: 20),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Text(
+                        'BIST 100',
+                        style: theme.textTheme.titleSmall?.copyWith(
+                          color: colors.onSurface,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      _Pill(
+                        label: 'Açık',
+                        color: colors.primary,
+                        background: colors.primary.withValues(alpha: .15),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 3),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.baseline,
+                    textBaseline: TextBaseline.alphabetic,
+                    children: [
+                      Text(
+                        idx != null
+                            ? formatPrice(idx.price, suffix: '')
+                            : (loading ? '…' : '—'),
+                        style: theme.textTheme.displaySmall?.copyWith(
+                          color: colors.onSurface,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        idx != null ? formatPercent(idx.changePercent) : '',
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: changeColor,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Text(
+                    'Son güncelleme',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: colors.onSurfaceVariant,
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    idx != null ? formatUpdatedNow() : (loading ? 'yükleniyor…' : '—'),
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: colors.secondary,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SearchButton extends StatelessWidget {
+  _SearchButton();
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+
+    return Material(
+      color: colors.surfaceContainerHighest,
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        onTap: () => Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => const HisseAraScreen()),
+        ),
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          height: 56,
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: colors.primary.withValues(alpha: .35)),
+          ),
+          child: Row(
+            children: [
+              _CircleIcon(
+                icon: Icons.search_rounded,
+                foreground: colors.primary,
+                background: colors.primary.withValues(alpha: .15),
+                size: 32,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  'Hisse ara: ASELS, THYAO, TUPRS',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: colors.onSurfaceVariant,
+                      ),
+                ),
+              ),
+              Icon(Icons.arrow_outward_rounded, color: colors.primary),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _MarketOverview extends StatelessWidget {
+  _MarketOverview();
+
+  final _items = const [
+    (
+      Icons.factory_outlined,
+      'Bankacılık dışı sanayi hisselerinde alım iştahı güçleniyor',
+      'Para akışı üretim ve ihracat ağırlıklı şirketlere yöneliyor.',
+      true,
+    ),
+    (
+      Icons.verified_user_outlined,
+      'Savunma sanayi hisseleri ihracat haberleriyle öne çıkıyor',
+      'Yeni sipariş akışı, sektörde görünürlüğü destekliyor.',
+      false,
+    ),
+    (
+      Icons.verified_outlined,
+      "Katılım Endeksi bugün BIST 100'ün üzerinde performans gösteriyor",
+      'Uygun hisselerde gün içi ortalama yükseliş daha güçlü.',
+      true,
+    ),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+
+    return _Section(
+      eyebrow: 'Örnek içerik',
+      title: 'Bugünün Piyasa Özeti',
+      trailing: 'Demo metin',
+      children: [
+        for (final item in _items)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 10),
+            child: _InsightCard(
+              icon: item.$1,
+              title: item.$2,
+              description: item.$3,
+              accent: item.$4 ? colors.primary : colors.tertiary,
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+class _ResearchRadar extends StatelessWidget {
+  const _ResearchRadar({required this.stocks, required this.loading});
+
+  final List<Quote> stocks;
+  final bool loading;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+
+    if (loading && stocks.isEmpty) {
+      return _Section(
+        eyebrow: 'Araştırma radarı',
+        title: 'Takip Listesi',
+        children: const [
+          Padding(
+            padding: EdgeInsets.symmetric(vertical: 24),
+            child: Center(child: CircularProgressIndicator()),
+          ),
+        ],
+      );
+    }
+
+    final featured = stocks.isNotEmpty ? stocks.first : null;
+    final rest = stocks.length > 1 ? stocks.sublist(1) : const <Quote>[];
+    final chartColors = [AppColors.chart2, AppColors.chart3, AppColors.chart4];
+
+    return _Section(
+      eyebrow: 'Araştırma radarı',
+      title: 'Takip Listesi',
+      trailing: 'Canlı fiyat',
+      trailingColor: colors.primary,
+      children: [
+        if (featured != null) _FeaturedStock(quote: featured),
+        if (rest.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              for (var i = 0; i < rest.length; i++) ...[
+                if (i > 0) const SizedBox(width: 12),
+                Expanded(
+                  child: _CompactStock(
+                    quote: rest[i],
+                    chartColor: chartColors[i % chartColors.length],
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+class _FeaturedStock extends StatelessWidget {
+  const _FeaturedStock({required this.quote});
+
+  final Quote quote;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final changeColor = quote.isUp ? colors.primary : colors.error;
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: colors.surface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: colors.primary.withValues(alpha: .35)),
+      ),
+      child: Column(
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              CircleAvatar(
+                radius: 16,
+                backgroundColor: colors.primary,
+                child: Text(
+                  '1',
+                  style: theme.textTheme.labelMedium?.copyWith(
+                    color: colors.onPrimary,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Text(
+                          quote.bistCode,
+                          style: theme.textTheme.titleLarge?.copyWith(
+                            color: colors.onSurface,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Flexible(
+                          child: Text(
+                            quote.shortName,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: theme.textTheme.labelSmall?.copyWith(
+                              color: colors.onSurfaceVariant,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 3),
+                    Text.rich(
+                      TextSpan(
+                        text: '${formatPrice(quote.price)} ',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: colors.onSurfaceVariant,
+                        ),
+                        children: [
+                          TextSpan(
+                            text: formatPercent(quote.changePercent),
+                            style: TextStyle(
+                              color: changeColor,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Container(
+                width: 56,
+                height: 56,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: changeColor.withValues(alpha: .1),
+                  border: Border.all(color: changeColor, width: 2),
+                ),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      quote.isUp
+                          ? Icons.arrow_upward_rounded
+                          : Icons.arrow_downward_rounded,
+                      color: changeColor,
+                      size: 16,
+                    ),
+                    Text(
+                      formatPercent(quote.changePercent),
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: changeColor,
+                        fontWeight: FontWeight.w800,
+                        fontSize: 9,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Önceki kapanış: ${formatPrice(quote.previousClose)}',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: colors.onSurface,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Gün içi değişim: ${formatPrice(quote.change)}',
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: colors.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              SizedBox(
+                width: 112,
+                height: 42,
+                child: Sparkline(
+                  values: quote.spark,
+                  color: changeColor,
+                  fill: true,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          Divider(color: colors.outline, height: 1),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'Fiyatlar Yahoo Finance • gecikmeli olabilir',
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: colors.onSurfaceVariant,
+                  ),
+                ),
+              ),
+              InkWell(
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const HisseAraScreen()),
+                ),
+                child: Text(
+                  'Ara  →',
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: colors.primary,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _CompactStock extends StatelessWidget {
+  const _CompactStock({
+    required this.quote,
+    required this.chartColor,
+  });
+
+  final Quote quote;
+  final Color chartColor;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final changeColor = quote.isUp ? colors.primary : colors.error;
+
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: colors.surface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: colors.outline),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                quote.bistCode,
+                style: theme.textTheme.titleMedium?.copyWith(
+                  color: colors.onSurface,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              Text(
+                formatPercent(quote.changePercent),
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: changeColor,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            formatPrice(quote.price),
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: colors.secondary,
+            ),
+          ),
+          const SizedBox(height: 12),
+          SizedBox(
+            height: 30,
+            width: double.infinity,
+            child: Sparkline(values: quote.spark, color: changeColor),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            quote.shortName,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: theme.textTheme.labelSmall?.copyWith(
+              color: colors.onSurfaceVariant,
+              height: 1.3,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _Signals extends StatelessWidget {
+  _Signals();
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+
+    return _Section(
+      eyebrow: 'Örnek içerik',
+      title: 'Sinyal Kartları (Demo)',
+      eyebrowColor: colors.tertiary,
+      children: [
+        Container(
+          decoration: BoxDecoration(
+            color: colors.surface,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: colors.outline),
+          ),
+          child: Column(
+            children: [
+              _SignalRow(
+                icon: Icons.radar_rounded,
+                title: 'ASELS flama kırılımı hedef bölgesine yaklaşıyor',
+                description: 'Fiyat hareketini sakin biçimde takip et.',
+                accent: colors.tertiary,
+              ),
+              Divider(height: 1, indent: 16, endIndent: 16, color: colors.outline),
+              _SignalRow(
+                icon: Icons.check_circle_outline_rounded,
+                title: "OYAKC'de fincan-kulp teyidi güçleniyor",
+                description: 'Güven sinyali gün içi hacimle destekleniyor.',
+                accent: colors.primary,
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _ParticipationNotice extends StatelessWidget {
+  _ParticipationNotice();
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: colors.primary.withValues(alpha: .1),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: colors.primary.withValues(alpha: .25)),
+      ),
+      child: Row(
+        children: [
+          _CircleIcon(
+            icon: Icons.lock_outline_rounded,
+            foreground: colors.primary,
+            background: colors.primary.withValues(alpha: .15),
+            size: 36,
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              'Yalnızca Katılım Endeksine Uygun hisseler gösteriliyor',
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: colors.secondary,
+                height: 1.35,
+              ),
+            ),
+          ),
+          Text(
+            'Filtreler',
+            style: theme.textTheme.labelSmall?.copyWith(
+              color: colors.primary,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _Section extends StatelessWidget {
+  const _Section({
+    required this.eyebrow,
+    required this.title,
+    required this.children,
+    this.trailing,
+    this.eyebrowColor,
+    this.trailingColor,
+  });
+
+  final String eyebrow;
+  final String title;
+  final List<Widget> children;
+  final String? trailing;
+  final Color? eyebrowColor;
+  final Color? trailingColor;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    eyebrow,
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: eyebrowColor ?? colors.primary,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 1.4,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    title,
+                    style: theme.textTheme.titleLarge?.copyWith(
+                      color: colors.onSurface,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            if (trailing != null)
+              Text(
+                trailing!,
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: trailingColor ?? colors.onSurfaceVariant,
+                  fontWeight:
+                      trailingColor == null ? FontWeight.normal : FontWeight.w800,
+                ),
+              ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        ...children,
+      ],
+    );
+  }
+}
+
+class _InsightCard extends StatelessWidget {
+  const _InsightCard({
+    required this.icon,
+    required this.title,
+    required this.description,
+    required this.accent,
+  });
+
+  final IconData icon;
+  final String title;
+  final String description;
+  final Color accent;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: colors.surface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: colors.outline),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _CircleIcon(
+            icon: icon,
+            foreground: accent,
+            background: accent.withValues(alpha: .12),
+            size: 36,
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: colors.onSurface,
+                    fontWeight: FontWeight.w700,
+                    height: 1.35,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  description,
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: colors.onSurfaceVariant,
+                    height: 1.35,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SignalRow extends StatelessWidget {
+  const _SignalRow({
+    required this.icon,
+    required this.title,
+    required this.description,
+    required this.accent,
+  });
+
+  final IconData icon;
+  final String title;
+  final String description;
+  final Color accent;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+
+    return Padding(
+      padding: const EdgeInsets.all(16),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _CircleIcon(
+            icon: icon,
+            foreground: accent,
+            background: accent.withValues(alpha: .15),
+            size: 36,
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: colors.onSurface,
+                    fontWeight: FontWeight.w700,
+                    height: 1.35,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  description,
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: colors.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: Icon(
+              Icons.chevron_right_rounded,
+              color: colors.onSurfaceVariant,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+
+class _CircleIcon extends StatelessWidget {
+  const _CircleIcon({
+    required this.icon,
+    required this.foreground,
+    required this.background,
+    required this.size,
+  });
+
+  final IconData icon;
+  final Color foreground;
+  final Color background;
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        color: background,
+        shape: BoxShape.circle,
+      ),
+      child: Icon(icon, color: foreground, size: size * .55),
+    );
+  }
+}
+
+class _IconButton extends StatelessWidget {
+  const _IconButton({required this.icon, required this.onPressed});
+
+  final IconData icon;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+
+    return IconButton(
+      onPressed: onPressed,
+      icon: Icon(icon, color: colors.secondary),
+      style: IconButton.styleFrom(
+        backgroundColor: colors.secondaryContainer,
+        side: BorderSide(color: colors.outline),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+        ),
+      ),
+    );
+  }
+}
+
+class _Pill extends StatelessWidget {
+  const _Pill({
+    required this.label,
+    required this.color,
+    required this.background,
+  });
+
+  final String label;
+  final Color color;
+  final Color background;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: background,
+        borderRadius: BorderRadius.circular(30),
+      ),
+      child: Text(
+        label,
+        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+              color: color,
+              fontWeight: FontWeight.w800,
+              fontSize: 10,
+            ),
+      ),
+    );
+  }
+}
+
