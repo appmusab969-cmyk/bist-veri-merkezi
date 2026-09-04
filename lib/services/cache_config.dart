@@ -7,8 +7,8 @@
 /// Kurulum: aşağıdaki [ghUser] / [ghRepo] / [ghBranch] değerlerini kendi
 /// GitHub deponuza göre doldurun. Başka hiçbir yeri değiştirmeniz gerekmez.
 class CacheConfig {
-  static const String ghUser = 'KULLANICI_ADIN';
-  static const String ghRepo = 'pusula';
+  static const String ghUser = 'appmusab969-cmyk';
+  static const String ghRepo = 'bist-veri-merkezi';
   static const String ghBranch = 'main';
 
   /// jsDelivr taban adresi. `@latest` yerine dal adı kullanıyoruz ki
