@@ -10,3 +10,4 @@ __pycache__/
 *.pyc
 .venv/
 venv/
+scripts/.universe_cache.json

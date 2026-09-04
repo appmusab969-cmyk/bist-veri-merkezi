@@ -34,7 +34,7 @@ from pathlib import Path
 
 import requests
 
-from symbols import BIST_UNIVERSE
+from symbols import get_universe_codes
 
 if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
     sys.stdout.reconfigure(encoding="utf-8")
@@ -155,11 +155,23 @@ def write_csv(path: Path, rows: list[dict]) -> None:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--only", nargs="*", default=None)
+    parser.add_argument(
+        "--resume",
+        action="store_true",
+        help="kap_news/<KOD>.json zaten var olan sembolleri atla",
+    )
     args = parser.parse_args()
 
-    universe = [s.upper() for s in args.only] if args.only else BIST_UNIVERSE
+    universe = [s.upper() for s in args.only] if args.only else get_universe_codes()
 
     OUT_DIR.mkdir(parents=True, exist_ok=True)
+
+    if args.resume:
+        done = {p.stem for p in OUT_DIR.glob("*.json") if p.stem != "index"}
+        skipped = len(universe) - len([c for c in universe if c not in done])
+        universe = [c for c in universe if c not in done]
+        print(f"[Bilgi] --resume: {skipped} sembol zaten var, atlandı.\n")
+
     print(f"▶ KAP / şirket haberi önbelleği başladı — {len(universe)} sembol\n")
 
     all_items: list[dict] = []

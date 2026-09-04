@@ -35,7 +35,7 @@ import pandas as pd
 import yfinance as yf
 from isyatirimhisse import fetch_financials
 
-from symbols import BIST_UNIVERSE, INDEX_SYMBOL
+from symbols import get_universe_codes, INDEX_SYMBOL
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 OUT_DIR = SCRIPT_DIR.parent / "data" / "cache"
@@ -199,12 +199,23 @@ def write_json(path: Path, data: dict) -> None:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--only", nargs="*", default=None)
+    parser.add_argument(
+        "--resume",
+        action="store_true",
+        help="fundamentals_tr/<KOD>.json zaten var olan sembolleri atla",
+    )
     args = parser.parse_args()
 
-    universe = [s.upper() for s in args.only] if args.only else BIST_UNIVERSE
+    universe = [s.upper() for s in args.only] if args.only else get_universe_codes()
 
     FUNDAMENTALS_DIR.mkdir(parents=True, exist_ok=True)
     PRICES_DIR.mkdir(parents=True, exist_ok=True)
+
+    if args.resume:
+        done = {p.stem for p in FUNDAMENTALS_DIR.glob("*.json") if p.stem != "index"}
+        skipped = len(universe) - len([c for c in universe if c not in done])
+        universe = [c for c in universe if c not in done]
+        print(f"[Bilgi] --resume: {skipped} sembol zaten var, atlandı.\n")
 
     print(f"▶ Türkçe temel analiz önbelleği başladı — {len(universe)} sembol\n")
 

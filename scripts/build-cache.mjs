@@ -13,7 +13,7 @@ import { writeFile, mkdir } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
-import { BIST_UNIVERSE, INDEX_SYMBOL, PARTICIPATION } from './symbols.mjs';
+import { getUniverseCodes, INDEX_SYMBOL, PARTICIPATION } from './symbols.mjs';
 import {
   fetchChart,
   quoteFromChart,
@@ -30,8 +30,7 @@ const SCHEMA_VERSION = 1;
 
 // CLI: --only ile alt küme
 const onlyIdx = process.argv.indexOf('--only');
-const UNIVERSE =
-  onlyIdx >= 0 ? process.argv.slice(onlyIdx + 1).map((s) => s.toUpperCase()) : BIST_UNIVERSE;
+const onlySubset = onlyIdx >= 0 ? process.argv.slice(onlyIdx + 1).map((s) => s.toUpperCase()) : null;
 
 // Yahoo'yu yormamak için küçük gruplar + gruplar arası bekleme.
 const CHUNK = 6;
@@ -77,6 +76,7 @@ async function buildOne(code) {
 
 async function main() {
   await mkdir(OUT_DIR, { recursive: true });
+  const UNIVERSE = onlySubset || (await getUniverseCodes());
   console.log(`▶ Önbellek üretimi başladı — ${UNIVERSE.length} sembol\n`);
 
   const perSymbol = {};

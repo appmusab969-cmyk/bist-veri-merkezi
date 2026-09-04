@@ -134,12 +134,32 @@ KAP'ın (kap.org.tr) 2024 sonrası kararlı bir genel API'si kalmadığından
 başına Yahoo Finance RSS akışı (KAP özel durum açıklamaları çoğunlukla buraya
 da düşer). Tüm istekler başarısız olursa boş liste döner, script hata vermez.
 
-## Evreni genişletme
+## Evren: artık dinamik (TÜM BIST)
 
-`scripts/symbols.mjs` → `BIST_UNIVERSE` dizisine kod ekleyin (Node tarafı).
-Python tarafı için aynı listeyi `scripts/symbols.py` içinde de güncelleyin —
-iki dosya birbirinden bağımsız import edildiği için elle senkron tutulmalı.
-Uygulama evreni `index.json`'dan okur; ayrıca kod değişikliği gerekmez.
+`scripts/symbols.mjs` (Node) ve `scripts/symbols.py` (Python), BIST'te işlem
+gören **tüm** hisseleri + borsa yatırım fonlarını (BYF) + kapalı uçlu yatırım
+ortaklıklarını TradingView'in genel scanner API'sinden (`scanner.tradingview.com`)
+her çalıştırmada dinamik olarak çeker — elle tutulan sabit bir liste yok.
+
+- `discoverUniverse()` / `discover_universe()`: ham sonucu `{code, name, type,
+  subtype}` olarak döner (`type/subtype`: `stock/common` adi hisse,
+  `fund/etf` BYF, `fund/closedend` kapalı uçlu yatırım ortaklığı).
+- `getUniverseCodes()` / `get_universe_codes()`: yalnızca kod listesini döner,
+  isteğe bağlı `kinds` filtresiyle alt küme alınabilir.
+
+TradingView'e erişilemezse (rate-limit, geçici kesinti) sırasıyla yerel
+`.universe_cache.json` dosyasına, o da yoksa küçük sabit `FALLBACK_UNIVERSE`
+listesine düşülür — script hiçbir zaman boş evrenle çalışmaz. Bu iki dosya
+(`.mjs`/`.py`) aynı TradingView endpoint'ini ve filtreyi kullanır ama
+birbirinden bağımsız import edildiği için mantık değişikliği HER İKİSİNE de
+uygulanmalıdır.
+
+**Not:** Tam evren (~650 sembol) ile çalıştırmalar önemli ölçüde daha uzun
+sürer (Node fiyat/temel: onlarca dakika; Python fundamentals: İş Yatırım'ın
+banka fallback denemeleri nedeniyle saatler mertebesinde olabilir). Uzun
+çalışmalar kesintiye uğrarsa `build_fundamentals.py --resume` ve
+`kap_news.py --resume` zaten tamamlanmış sembolleri atlayıp kaldığı yerden
+devam eder.
 
 ## Maliyet tablosu
 
