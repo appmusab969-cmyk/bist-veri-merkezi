@@ -165,6 +165,8 @@ class StockDetail {
         Metric('Brüt marj', pct(fd, 'grossMargins')),
         Metric('Faaliyet marjı', pct(fd, 'operatingMargins')),
         Metric('Özsermaye kârlılığı', pct(fd, 'returnOnEquity')),
+        Metric('Temettü Verimi', pct(sd, 'dividendYield')),
+        Metric('Payout Ratio', pct(sd, 'payoutRatio')),
       ],
       financials: [
         Metric('Toplam gelir', fmt(fd, 'totalRevenue'), raw: raw(fd, 'totalRevenue')),

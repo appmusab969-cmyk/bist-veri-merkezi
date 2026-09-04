@@ -1,16 +1,12 @@
 import 'package:flutter/material.dart';
 import '../theme.dart';
 import '../models/quote.dart';
-import '../services/yahoo_finance.dart';
+import '../services/market_repository.dart';
 import '../services/format.dart';
 import '../services/app_settings.dart';
 import '../widgets/sparkline.dart';
 import 'hisse_ara.dart';
 import 'hisse_detay.dart';
-
-/// Ana Sayfa'da canlı fiyatı çekilen hisseler (Yahoo `.IS` sembolleri).
-const _watchlist = ['ASELS', 'OYAKC', 'TOASO'];
-const _indexSymbol = 'XU100.IS'; // BIST 100 endeksi
 
 class MarketCockpitScreen extends StatefulWidget {
   const MarketCockpitScreen({super.key});
@@ -20,10 +16,11 @@ class MarketCockpitScreen extends StatefulWidget {
 }
 
 class _MarketCockpitScreenState extends State<MarketCockpitScreen> {
-  final _api = YahooFinance();
+  final _repo = MarketRepository();
 
   Quote? _index;
   List<Quote> _stocks = const [];
+  DateTime? _updatedAt;
   bool _loading = true;
   String? _error;
 
@@ -37,7 +34,7 @@ class _MarketCockpitScreenState extends State<MarketCockpitScreen> {
   @override
   void dispose() {
     AppSettings.instance.removeListener(_onSettings);
-    _api.dispose();
+    _repo.dispose();
     super.dispose();
   }
 
@@ -45,22 +42,33 @@ class _MarketCockpitScreenState extends State<MarketCockpitScreen> {
     if (mounted) setState(() {});
   }
 
-  Future<void> _load() async {
+  Future<void> _load({bool force = false}) async {
     setState(() {
       _loading = true;
       _error = null;
     });
     try {
-      final results = await Future.wait([
-        _api.fetchQuote(_indexSymbol).then<Quote?>((q) => q).catchError((_) => null),
-        _api.fetchQuotes(_watchlist),
-      ]);
+      final snap = await _repo.marketSnapshot(forceRefresh: force);
       if (!mounted) return;
+      // Katılım filtresi istemci tarafında uygulanır (sunucuya sorgu yok).
+      final onlyParticipation = AppSettings.instance.participationFilter;
+      final rows = snap.rows
+          .where((r) => !onlyParticipation || r.participation)
+          .map((r) => Quote(
+                symbol: '${r.code}.IS',
+                shortName: r.name,
+                price: r.price,
+                previousClose: r.price / (1 + r.changePercent / 100),
+                currency: 'TRY',
+                spark: r.spark,
+              ))
+          .toList();
       setState(() {
-        _index = results[0] as Quote?;
-        _stocks = results[1] as List<Quote>;
+        _index = snap.market;
+        _stocks = rows;
+        _updatedAt = snap.updatedAt;
         _loading = false;
-        if (_index == null && _stocks.isEmpty) {
+        if (_index == null && rows.isEmpty) {
           _error = 'Veri alınamadı. İnternet bağlantını kontrol et.';
         }
       });
@@ -82,11 +90,12 @@ class _MarketCockpitScreenState extends State<MarketCockpitScreen> {
       body: SafeArea(
         bottom: false,
         child: RefreshIndicator(
-          onRefresh: _load,
+          onRefresh: () => _load(force: true),
           child: CustomScrollView(
             slivers: [
               SliverToBoxAdapter(
-                child: _Header(index: _index, loading: _loading),
+                child: _Header(
+                    index: _index, loading: _loading, updatedAt: _updatedAt),
               ),
               SliverPadding(
                 padding: const EdgeInsets.fromLTRB(20, 20, 20, 40),
@@ -149,10 +158,11 @@ class _ErrorCard extends StatelessWidget {
 }
 
 class _Header extends StatelessWidget {
-  const _Header({this.index, this.loading = false});
+  const _Header({this.index, this.loading = false, this.updatedAt});
 
   final Quote? index;
   final bool loading;
+  final DateTime? updatedAt;
 
   @override
   Widget build(BuildContext context) {
@@ -266,7 +276,9 @@ class _Header extends StatelessWidget {
                   ),
                   const SizedBox(height: 3),
                   Text(
-                    idx != null ? formatUpdatedNow() : (loading ? 'yükleniyor…' : '—'),
+                    updatedAt != null
+                        ? formatRelative(updatedAt!)
+                        : (loading ? 'yükleniyor…' : '—'),
                     style: theme.textTheme.bodySmall?.copyWith(
                       color: colors.secondary,
                       fontWeight: FontWeight.w700,

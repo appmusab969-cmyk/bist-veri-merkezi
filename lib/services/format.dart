@@ -10,3 +10,14 @@ String formatPrice(double v, {String suffix = ' TL'}) =>
 String formatPercent(double v) => '%${_pct.format(v)}';
 
 String formatUpdatedNow() => _time.format(DateTime.now());
+
+String formatDate(DateTime d) => _time.format(d.toLocal());
+
+/// "3 saat önce" gibi göreli süre — önbelleğin ne kadar taze olduğunu göstermek için.
+String formatRelative(DateTime d) {
+  final diff = DateTime.now().difference(d.toLocal());
+  if (diff.inMinutes < 1) return 'az önce';
+  if (diff.inMinutes < 60) return '${diff.inMinutes} dk önce';
+  if (diff.inHours < 24) return '${diff.inHours} saat önce';
+  return '${diff.inDays} gün önce';
+}

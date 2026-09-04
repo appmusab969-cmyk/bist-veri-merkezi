@@ -1,20 +1,12 @@
 import 'package:flutter/material.dart';
 
 import '../models/quote.dart';
-import '../services/yahoo_finance.dart';
+import '../services/market_repository.dart';
 import '../services/format.dart';
 import '../services/technical.dart';
 import '../services/app_settings.dart';
 import '../widgets/sparkline.dart';
 import 'hisse_detay.dart';
-
-/// Taranan hisse evreni (ücretsiz, sabit liste — BIST'te likit büyükler).
-const _universe = <String>[
-  'ASELS', 'THYAO', 'TUPRS', 'BIMAS', 'KCHOL', 'SAHOL', 'FROTO', 'TOASO',
-  'SISE', 'EREGL', 'KRDMD', 'PETKM', 'OYAKC', 'TCELL', 'PGSUS', 'AEFES',
-  'CCOLA', 'MGROS', 'ULKER', 'TAVHL', 'ENKAI', 'SASA', 'ALARK', 'HEKTS',
-  'GUBRF', 'VESTL', 'ARCLK', 'TKFEN', 'DOAS', 'ISDMR',
-];
 
 class _Row {
   _Row(this.code, this.quote, this.signal, this.spark);
@@ -34,7 +26,7 @@ class FormationsScreen extends StatefulWidget {
 }
 
 class _FormationsScreenState extends State<FormationsScreen> {
-  final _api = YahooFinance();
+  final _repo = MarketRepository();
 
   int _filter = 0; // 0 Tümü · 1 Yükseliş sinyali · 2 Katılım · 3 Yüksek güven
   bool _loading = true;
@@ -50,42 +42,54 @@ class _FormationsScreenState extends State<FormationsScreen> {
     _scan();
   }
 
+  List<String> _universe = const [];
+
   @override
   void dispose() {
     AppSettings.instance.removeListener(_onSettings);
-    _api.dispose();
+    _repo.dispose();
     super.dispose();
   }
 
   void _onSettings() => setState(() {});
 
-  Future<void> _scan() async {
+  Future<void> _scan({bool force = false}) async {
     setState(() {
       _loading = true;
       _error = null;
     });
     try {
-      // Sırayla küçük gruplar hâlinde çek (Yahoo'yu yormamak için).
+      // Evren + fiyatlar tek statik dosyadan (index.json) gelir.
+      final snap = await _repo.marketSnapshot(forceRefresh: force);
+      _universe = snap.rows.map((r) => r.code).toList();
+      final byCode = {for (final r in snap.rows) r.code: r};
+
+      // Teknik sinyal için günlük OHLC — her biri hisse başına tek statik dosya,
+      // 12 saat CDN'de önbelleklenir. 10.000 kullanıcı arka uca yük bindirmez.
       final rows = <_Row>[];
-      const chunk = 6;
+      const chunk = 8;
       for (var i = 0; i < _universe.length; i += chunk) {
-        final part = _universe.sublist(
-            i, (i + chunk).clamp(0, _universe.length));
+        final part =
+            _universe.sublist(i, (i + chunk).clamp(0, _universe.length));
         final results = await Future.wait(part.map((code) async {
           try {
-            final hist = await _api.fetchHistory(code,
-                range: '6mo', interval: '1d');
+            final hist = await _repo.history(code);
             if (hist.length < 25) return null;
             final sig = TechnicalSignal.fromCandles(hist);
-            final q = await _api.fetchQuote(code);
+            final r = byCode[code]!;
+            final q = Quote(
+              symbol: '$code.IS',
+              shortName: r.name,
+              price: r.price,
+              previousClose: r.price / (1 + r.changePercent / 100),
+              currency: 'TRY',
+              spark: r.spark,
+            );
             return _Row(
               code,
               q,
               sig,
-              hist
-                  .sublist(hist.length - 40)
-                  .map((c) => c.close)
-                  .toList(),
+              hist.sublist(hist.length - 40).map((c) => c.close).toList(),
             );
           } catch (_) {
             return null;

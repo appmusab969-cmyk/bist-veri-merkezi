@@ -1,0 +1,12 @@
+{
+  "name": "pusula-cache-builder",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Günde bir kez çalışıp BIST temel/fiyat/KAP verilerini statik JSON'a önbellekleyen script.",
+  "scripts": {
+    "build": "node build-cache.mjs",
+    "build:one": "node build-cache.mjs --only"
+  },
+  "engines": { "node": ">=20" }
+}
