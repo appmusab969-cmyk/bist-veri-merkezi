@@ -41,6 +41,10 @@ jobs:
         working-directory: scripts
         run: python build_fundamentals.py
 
+      - name: Build KAP bildirimi / şirket haberi cache
+        working-directory: scripts
+        run: python kap_news.py
+
       - name: Commit updated cache
         run: |
           git config user.name  "pusula-bot"

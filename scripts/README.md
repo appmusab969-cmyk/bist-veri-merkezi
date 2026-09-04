@@ -42,10 +42,14 @@ JSON'a yazılır; kullanıcılar bu JSON'u global CDN'den okur.
 | `fundamentals_tr/<KOD>.json` | yfinance fiyat özeti + İş Yatırım'dan son 3 yıllık bilanço/gelir tablosu kalemleri | (opsiyonel, Node önbelleğini tamamlar) |
 | `fundamentals_tr/index.json` | Python üretiminin özeti + `failures` | — |
 | `prices_tr/<KOD>.csv` | yfinance'ten 1 yıllık günlük OHLCV | — |
+| `kap_news/<KOD>.json` | Hisse başına son bildirimler/haberler (Yahoo per-symbol RSS) | — |
+| `kap_news/index.json` | Tüm evren, tarihe göre sıralı birleşik akış + `failures` | — |
+| `kap_news/kap_news.csv` | Aynı bildirim verisi düz tablo (analiz/Excel için) | — |
 
-`fundamentals_tr/` ve `prices_tr/`, `build_fundamentals.py` (Python) tarafından
-üretilir ve mevcut Node şemasına (`stock/`, `index.json`) hiç dokunmaz — ayrı
-bir veri kaynağı olarak durur, ileride uygulamaya entegre edilebilir.
+`fundamentals_tr/`, `prices_tr/` ve `kap_news/`, sırasıyla `build_fundamentals.py`
+ve `kap_news.py` (Python) tarafından üretilir; mevcut Node şemasına (`stock/`,
+`index.json`, `kap.json`) hiç dokunmazlar — ayrı bir veri kaynağı olarak
+dururlar, ileride uygulamaya entegre edilebilirler.
 
 Tüm sayısal alanlar **ham** tutulur; sektör ortalaması, 10 yıllık bant,
 Piotroski/Altman skorları uygulamada **istemci tarafında** türetilir
@@ -115,6 +119,20 @@ Python 3.10+ gerekir. Fiyat/piyasa verisi **yfinance**'ten, bilanço/gelir
 tablosu kalemleri **isyatirimhisse** (İş Yatırım) üzerinden çekilir.
 Bankalar farklı bir bilanço şablonu (UFRS) kullandığından script sırasıyla
 XI_29 → UFRS → UFRS_K gruplarını dener ve ilk dolu sonucu kullanır.
+
+### Python — KAP bildirimi / şirket haberi
+
+```bash
+cd scripts
+pip install -r requirements.txt
+python kap_news.py                    # tüm evren
+python kap_news.py --only ASELS THYAO # alt küme (hızlı test)
+```
+
+KAP'ın (kap.org.tr) 2024 sonrası kararlı bir genel API'si kalmadığından
+(tamamen JS-render SPA), `scripts/kap.mjs` ile aynı stratejiyi izler: hisse
+başına Yahoo Finance RSS akışı (KAP özel durum açıklamaları çoğunlukla buraya
+da düşer). Tüm istekler başarısız olursa boş liste döner, script hata vermez.
 
 ## Evreni genişletme
 
