@@ -39,6 +39,13 @@ JSON'a yazılır; kullanıcılar bu JSON'u global CDN'den okur.
 | `index.json` | Endeks + tüm evren için özet satır (fiyat, %değişim, spark, katılım) + `failures` | Ana Sayfa, Formasyonlar |
 | `stock/<KOD>.json` | Tam `detail` (rasyolar, bilanço, tavsiye) + 1 yıllık OHLC | Hisse Detay |
 | `kap.json` | Bildirim/haber akışı (hisse kodu eşlemeli) | Hisse Detay → KAP & Risk |
+| `fundamentals_tr/<KOD>.json` | yfinance fiyat özeti + İş Yatırım'dan son 3 yıllık bilanço/gelir tablosu kalemleri | (opsiyonel, Node önbelleğini tamamlar) |
+| `fundamentals_tr/index.json` | Python üretiminin özeti + `failures` | — |
+| `prices_tr/<KOD>.csv` | yfinance'ten 1 yıllık günlük OHLCV | — |
+
+`fundamentals_tr/` ve `prices_tr/`, `build_fundamentals.py` (Python) tarafından
+üretilir ve mevcut Node şemasına (`stock/`, `index.json`) hiç dokunmaz — ayrı
+bir veri kaynağı olarak durur, ileride uygulamaya entegre edilebilir.
 
 Tüm sayısal alanlar **ham** tutulur; sektör ortalaması, 10 yıllık bant,
 Piotroski/Altman skorları uygulamada **istemci tarafında** türetilir
@@ -95,10 +102,26 @@ node build-cache.mjs --only ASELS THYAO # alt küme (hızlı test)
 
 Node 20+ gerekir. Bağımlılık yok (yerleşik `fetch`).
 
+### Python — Türkçe temel analiz / bilanço
+
+```bash
+cd scripts
+pip install -r requirements.txt
+python build_fundamentals.py                    # tüm evren
+python build_fundamentals.py --only ASELS THYAO  # alt küme (hızlı test)
+```
+
+Python 3.10+ gerekir. Fiyat/piyasa verisi **yfinance**'ten, bilanço/gelir
+tablosu kalemleri **isyatirimhisse** (İş Yatırım) üzerinden çekilir.
+Bankalar farklı bir bilanço şablonu (UFRS) kullandığından script sırasıyla
+XI_29 → UFRS → UFRS_K gruplarını dener ve ilk dolu sonucu kullanır.
+
 ## Evreni genişletme
 
-`scripts/symbols.mjs` → `BIST_UNIVERSE` dizisine kod ekleyin. Uygulama evreni
-`index.json`'dan okur; ayrıca kod değişikliği gerekmez.
+`scripts/symbols.mjs` → `BIST_UNIVERSE` dizisine kod ekleyin (Node tarafı).
+Python tarafı için aynı listeyi `scripts/symbols.py` içinde de güncelleyin —
+iki dosya birbirinden bağımsız import edildiği için elle senkron tutulmalı.
+Uygulama evreni `index.json`'dan okur; ayrıca kod değişikliği gerekmez.
 
 ## Maliyet tablosu
 

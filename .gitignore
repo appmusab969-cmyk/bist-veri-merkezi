@@ -4,3 +4,9 @@
 build/
 .idea/
 *.iml
+
+# Python (scripts/build_fundamentals.py)
+__pycache__/
+*.pyc
+.venv/
+venv/
